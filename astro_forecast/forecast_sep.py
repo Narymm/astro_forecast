@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 # Выключаем логирование
-#logging.disable(logging.CRITICAL)
+logging.disable(logging.CRITICAL)
 
 # Загрузка переменных окружения из файла .env
 load_dotenv()
@@ -203,7 +203,7 @@ async def handle_question(update: Update, context: CallbackContext) -> None:
 
         write_to_google_sheets(context.user_data)
         context.user_data['answers'] = []
-        await query.message.reply_text('Присоединяйтесь к моему <a href="https://t.me/astro_nataly_bonum">ТГ-каналу</a>, где я делюсь астро-тенденциями и своей жизнью.\nА также, познакомьтесь с моим <a href="https://astronbonum.tilda.ws">сайтом</a>.\n\n❤️ Буду ждать вас там!\n\nДо встречи!',
+        await query.message.reply_text('Присоединяйтесь к моему <a href="https://t.me/astro_nataly_bonum">ТГ-каналу</a> и <a href="https://www.instagram.com/nataly_bonum?igsh=MWo5emFvczUwaHUyNQ==">Инстаграмм</a>, где я делюсь астро-тенденциями и своей жизнью.\nА также, познакомьтесь с моим <a href="https://astronbonum.tilda.ws">сайтом</a>.\n\n❤️ Буду ждать вас там!\n\nДо встречи!',
                                        parse_mode='HTML'
                                        )
         return ConversationHandler.END
@@ -236,7 +236,7 @@ async def get_addit_data(update: Update, context: CallbackContext) -> None:
     
     write_to_google_sheets(context.user_data)
     context.user_data['answers'] = []
-    await update.message.reply_text('<i>В ближайшее время я свяжусь с вами ❤️\nИ предоставлю <b>ИНДИВИДУАЛЬНЫЕ</b> тенденции сентября по вашей натальной карте ☀️\nЧто поможет вам <b>расставить СВОИ ориентиры</b> в этот период</i>\n\nА пока, вы можете присоединиться к моему <a href="https://t.me/astro_nataly_bonum">ТГ-каналу</a>, где я делюсь астро-тенденциями и своей жизнью.\nА также, познакомиться с моим <a href="https://astronbonum.tilda.ws">сайтом</a>.\n\nДо связи!', 
+    await update.message.reply_text('<i>В ближайшее время я свяжусь с вами ❤️\nИ предоставлю <b>ИНДИВИДУАЛЬНЫЕ</b> тенденции сентября по вашей натальной карте ☀️\nЧто поможет вам <b>расставить СВОИ ориентиры</b> в этот период</i>\n\nА пока, вы можете присоединиться к моему <a href="https://t.me/astro_nataly_bonum">ТГ-каналу</a> и <a href="https://www.instagram.com/nataly_bonum?igsh=MWo5emFvczUwaHUyNQ==">Инстаграмм</a>, где я делюсь астро-тенденциями и своей жизнью.\nА также, познакомиться с моим <a href="https://astronbonum.tilda.ws">сайтом</a>.\n\nДо связи!', 
                                     parse_mode='HTML'
                                     )
     return ConversationHandler.END
