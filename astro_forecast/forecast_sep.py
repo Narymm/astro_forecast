@@ -122,7 +122,7 @@ def write_to_google_sheets(user_data):
     sheet = client.open("ChatBotBD").worksheet("Forecast_sep")  # Замените на имя вашего листа
 
     # Подготовка данных для записи
-    row = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_data['username'], user_data['telegram_account']] + user_data['answers'] + [user_data.get('addit_data', '')]
+    row = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_data['username'], user_data['telegram_account'], user_data['id']] + user_data['answers'] + [user_data.get('addit_data', '')]
     sheet.append_row(row)
 
 # Функция для обработки команды /start
@@ -148,6 +148,7 @@ async def start_survey(update: Update, context: CallbackContext) -> int:
 async def ask_name(update: Update, context: CallbackContext) -> None:
     context.user_data['username'] = update.message.text
     context.user_data['telegram_account'] = update.message.from_user.username  # Сохраняем аккаунт Telegram
+    context.user_data['id'] = update.message.from_user.id  # Сохраняем id Telegram
     await update.message.reply_text(
         questions[0],
         reply_markup=create_inline_keyboard(options[0], row_width=3)  # Задаем 3 кнопки в ряду
@@ -174,9 +175,15 @@ async def handle_question(update: Update, context: CallbackContext) -> None:
         return QUESTION1 + current_state
     
     elif current_state == len(questions) and query.data == "Отправить данные":
-        await query.message.reply_text(
-            'Пожалуйста, введите данные:'
-        )
+        if context.user_data['telegram_account'] == None:
+             await query.message.reply_text(
+                 'Пожалуйста, введите <b><i>Данные</i></b> и укажите <b><i>Контакт</i></b>, по которому можно с вами связаться (аккаунт ТГ/телефон/почта):',
+                 parse_mode='HTML'
+            )
+        else:
+            await query.message.reply_text(
+                'Пожалуйста, введите данные:'
+            )
         return GET_DATA
 
     else:
