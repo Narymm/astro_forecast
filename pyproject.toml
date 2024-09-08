@@ -16,7 +16,6 @@ pytelegrambotapi = "^4.22.1"
 google-auth = "^2.34.0"
 python-dotenv = "^1.0.1"
 flask = "^3.0.3"
-pytz = "^2024.1"
 
 
 [tool.poetry.group.dev.dependencies]

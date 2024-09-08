@@ -4,7 +4,6 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Conv
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime, timedelta
-import pytz
 from dotenv import load_dotenv
 import os
 
@@ -123,7 +122,7 @@ def write_to_google_sheets(user_data):
     sheet = client.open("ChatBotBD").worksheet("Forecast_sep")  # Замените на имя вашего листа
 
     # Подготовка данных для записи
-    row = [datetime.now(pytz.timezone('Etc/GMT+0')).strftime("%Y-%m-%d %H:%M:%S"), user_data['username'], user_data['telegram_account'], user_data['id']] + user_data['answers'] + [user_data.get('addit_data', '')]
+    row = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_data['username'], user_data['telegram_account'], user_data['id']] + user_data['answers'] + [user_data.get('addit_data', '')]
     sheet.append_row(row)
 
 # Функция для обработки команды /start
