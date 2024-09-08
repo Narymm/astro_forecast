@@ -4,6 +4,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Conv
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime, timedelta
+import pytz
 from dotenv import load_dotenv
 import os
 
@@ -25,7 +26,7 @@ load_dotenv()
 bot_token = os.getenv('BOT_TOKEN')
 
 # Определение состояний для ConversationHandler
-ASK_NAME, QUESTION1, QUESTION2, QUESTION3, GET_DATA, RESULT = range(6)
+ASK_NAME, QUESTION1, QUESTION2, QUESTION3, GET_DATA, RESULT, GET_FIRST_ANSWER = range(7)
 
 # Вопросы и варианты ответов
 questions = [
@@ -122,7 +123,7 @@ def write_to_google_sheets(user_data):
     sheet = client.open("ChatBotBD").worksheet("Forecast_sep")  # Замените на имя вашего листа
 
     # Подготовка данных для записи
-    row = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_data['username'], user_data['telegram_account'], user_data['id']] + user_data['answers'] + [user_data.get('addit_data', '')]
+    row = [datetime.now(pytz.timezone('Etc/GMT+0')).strftime("%Y-%m-%d %H:%M:%S"), user_data['username'], user_data['telegram_account'], user_data['id']] + user_data['answers'] + [user_data.get('addit_data', '')]
     sheet.append_row(row)
 
 # Функция для обработки команды /start
@@ -175,11 +176,12 @@ async def handle_question(update: Update, context: CallbackContext) -> None:
         return QUESTION1 + current_state
     
     elif current_state == len(questions) and query.data == "Отправить данные":
-        if context.user_data['telegram_account'] == None:
+        if context.user_data['telegram_account'] is None:
              await query.message.reply_text(
-                 'Пожалуйста, введите <b><i>Данные</i></b> и укажите <b><i>Контакт</i></b>, по которому можно с вами связаться (аккаунт ТГ/телефон/почта):',
+                 '<b>Возможно, ваш личный контакт скрыт. Если вы хотели бы получить разбор, то укажите ваш аккаунт через @ или номер телефона, привязанный к этому аккаунту.</b>',
                  parse_mode='HTML'
-            )
+             )
+             return GET_FIRST_ANSWER
         else:
             await query.message.reply_text(
                 'Пожалуйста, введите данные:'
@@ -214,7 +216,18 @@ async def handle_question(update: Update, context: CallbackContext) -> None:
                                        parse_mode='HTML'
                                        )
         return ConversationHandler.END
+
+async def get_first_answer(update: Update, context: CallbackContext) -> int:
+    # Получаем ответ пользователя на первый вопрос
+    user_answer = update.message.text
+    context.user_data['telegram_account'] = user_answer  # Сохраняем ответ в user_data
     
+    await update.message.reply_text(
+        'Пожалуйста, введите данные: <b>дата, время и город рождения</b>',
+        parse_mode='HTML'
+    )
+    return GET_DATA
+
 # Функция для обработки данных
 async def get_addit_data(update: Update, context: CallbackContext) -> None:
     user_input = update.message.text
@@ -287,6 +300,7 @@ def main() -> None:
             QUESTION2: [CallbackQueryHandler(handle_question, pattern='^(Удачно|Сложно)$')],
             QUESTION3: [CallbackQueryHandler(handle_question, pattern='^(Отправить данные|Нет, спасибо)$')],
             GET_DATA: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_addit_data)],
+            GET_FIRST_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_first_answer)],
         },
         fallbacks=[CallbackQueryHandler(cancel, pattern="^cancel$")]
     )
