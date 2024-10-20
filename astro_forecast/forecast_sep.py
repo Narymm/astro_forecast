@@ -3,9 +3,11 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, CallbackContext, MessageHandler, filters, ApplicationBuilder, Updater, JobQueue, ContextTypes
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from googleapiclient.discovery import build
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
+import hashlib
 
 
 # Включаем логирование
@@ -16,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 # Выключаем логирование
-#logging.disable(logging.CRITICAL)
+logging.disable(logging.CRITICAL)
 
 # Загрузка переменных окружения из файла .env
 load_dotenv()
@@ -27,9 +29,13 @@ bot_token = os.getenv('BOT_TOKEN')
 # Определение состояний для ConversationHandler
 ASK_NAME, QUESTION1, QUESTION2, QUESTION3, GET_DATA, RESULT, GET_FIRST_ANSWER = range(7)
 
+# Путь к локальному изображению для приветственного сообщения
+#WELCOME_PHOTO_PATH = 'C:/Users/narym/Chatbots/test/test/IMG_0969.jpg'  # Замените на путь к вашему изображению
+WELCOME_PHOTO_PATH = os.getenv('WELCOME_PHOTO_PATH')
+
 # Описание результатов на основе ответов
 
-results = {
+images_zodiac = {
     "Овен": {
         "image": os.getenv('OVEN')
     },
@@ -68,22 +74,6 @@ results = {
     },
 }
 
-# Путь к локальному изображению для приветственного сообщения
-#WELCOME_PHOTO_PATH = 'C:/Users/narym/Chatbots/test/test/IMG_0969.jpg'  # Замените на путь к вашему изображению
-WELCOME_PHOTO_PATH = os.getenv('WELCOME_PHOTO_PATH')
-
-# Функция для генерации inline клавиатуры
-def create_inline_keyboard(options, row_width=2):
-    keyboard = []
-    for i in range(0, len(options), row_width):
-        keyboard.append([InlineKeyboardButton(option, callback_data=option) for option in options[i:i+row_width]])
-    return InlineKeyboardMarkup(keyboard)
-
-# Функция для генерации стартовой inline клавиатуры
-def start_keyboard():
-    keyboard = [[InlineKeyboardButton("Прогноз на сентябрь", callback_data="start_survey")]]
-    return InlineKeyboardMarkup(keyboard)
-
 # Настройка доступа к Google Sheets
 def get_gspread_client():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -101,7 +91,9 @@ def get_google_sheet(table_name, sheet_name):
     return data
 
 # Получение данных из Google Таблицы
-table_name = 'ChatBotBD'  # имя таблицы Google
+# Укажите fileId вашей таблицы
+file_id = '1F4EqyvYcQIydytD-V4UjqDTp8BDbvvGBo6Ej3k4Da9E'
+table_name = 'TextChatBot'  # имя таблицы Google
 sheet_name1 = 'Questions_Answers'  # Название листа
 sheet_name2 = 'Results'
 
@@ -112,11 +104,57 @@ data2 = get_google_sheet(table_name, sheet_name2)
 questions = [row['Вопросы'] for row in data1]
 options = [row['Варианты'].split("|") for row in data1]
 #results = {row['Результат']: {'description': row['Описание'], 'image': row['Картинка']} for row in data}
-description = {row['Результат']: {'description': row['Описание']} for row in data2}
+results = {row['Результат']: {'description': row['Описание']} for row in data2}
 
+# Добавление images в массив results
 for key in results:
-    if key in description:
-        results[key]['description'] = description[key]['description']
+    if key in images_zodiac:
+        results[key]['image'] = images_zodiac[key]['image']
+
+# Функция получения данных таблицы из хэша
+def get_sheet_data_hash(table_name, sheet_name):
+    data = get_google_sheet(table_name, sheet_name1)
+    data_str = str(data)
+    return hashlib.md5(data_str.encode()).hexdigest()
+
+last_data_hash = None
+
+# Проверка изменений
+def get_updated_data_by_hash():
+    global last_data_hash
+    current_hash = get_sheet_data_hash(table_name, sheet_name1)
+    
+    if last_data_hash != current_hash:
+        last_data_hash = current_hash
+        print("Данные изменились!")
+        return True  # Данные изменились
+    else:
+        print("Данные не изменились")
+        return False  # Данные не изменились
+
+async def get_updated_data():
+    print("Файл изменен, обновляем данные...")
+    global questions, options, results
+
+    questions = [row['Вопросы'] for row in get_google_sheet(table_name, sheet_name1)]
+    options = [row['Варианты'].split("|") for row in get_google_sheet(table_name, sheet_name1)]
+    descr = {row['Результат']: {'description': row['Описание']} for row in get_google_sheet(table_name, sheet_name2)}
+    for key in results:
+        if key in descr:
+            results[key]['description'] = descr[key]['description']
+    return questions, options, results
+
+# Функция для генерации inline клавиатуры
+def create_inline_keyboard(options, row_width=2):
+    keyboard = []
+    for i in range(0, len(options), row_width):
+        keyboard.append([InlineKeyboardButton(option, callback_data=option) for option in options[i:i+row_width]])
+    return InlineKeyboardMarkup(keyboard)
+
+# Функция для генерации стартовой inline клавиатуры
+def start_keyboard():
+    keyboard = [[InlineKeyboardButton("Прогноз на сентябрь", callback_data="start_survey")]]
+    return InlineKeyboardMarkup(keyboard)
 
 # Запись данных в Google Sheets
 def write_to_google_sheets(user_data):
@@ -137,6 +175,13 @@ async def start(update: Update, context: CallbackContext) -> int:
             parse_mode='HTML',
             reply_markup=start_keyboard()
         )
+
+    modify = get_updated_data_by_hash()
+    print(f"Изменения: {modify}")
+
+    if modify == True:
+        await get_updated_data()
+
     return ASK_NAME
 
 # Функция для обработки начала опроса
@@ -144,6 +189,7 @@ async def start_survey(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
     await query.message.reply_text('Пожалуйста, введите ваше имя:')
+
     return ASK_NAME
 
 # Функция для обработки имени пользователя
@@ -158,16 +204,17 @@ async def ask_name(update: Update, context: CallbackContext) -> None:
     )
     return QUESTION1
 
-# Функция для обработки завершения опроса и отправки результата
+
 
 # Функция для обработки ответов на вопросы
 async def handle_question(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
+    # Сохраняем ответ
     answers = context.user_data.setdefault('answers', [])
     answers.append(query.data)
-    
-    current_state = len(answers)
+    # Определяем текущее состояние (номер вопроса)
+    current_state = len(answers) # Определяем текущее состояние (номер вопроса)
     
     if current_state < len(questions):  # Учитываем, что последний вопрос - это вопрос о данных
         await query.message.reply_text(
@@ -175,8 +222,10 @@ async def handle_question(update: Update, context: CallbackContext) -> None:
             reply_markup=create_inline_keyboard(options[current_state]),
             parse_mode='Markdown'
         )
+        print(f"current_state: {current_state}")
+        print(f"len(questions): {len(questions)}")
         return QUESTION1 + current_state
-    
+            
     elif current_state == len(questions) and query.data == "Отправить данные":
         if context.user_data['telegram_account'] is None:
              await query.message.reply_text(
@@ -286,12 +335,13 @@ def main() -> None:
 
     job_queue.run_repeating(send_ping, interval=timedelta(minutes=60), first=timedelta(seconds=10), name="ping_job", data="chat_id")
 
-
     # Определение обработчика разговора с состояниями
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_survey, pattern='start_survey')],
         states={
             ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name)],
+            # Добавляем все вопросы из динамических состояний
+            1: [CallbackQueryHandler(handle_question, pattern='^(Овен|Телец|Близнецы|Рак|Лев|Дева|Весы|Скорпион|Стрелец|Козерог|Водолей|Рыбы)$')],
             QUESTION1: [CallbackQueryHandler(handle_question, pattern='^(Овен|Телец|Близнецы|Рак|Лев|Дева|Весы|Скорпион|Стрелец|Козерог|Водолей|Рыбы)$')],
             QUESTION2: [CallbackQueryHandler(handle_question, pattern='^(Удачно|Сложно)$')],
             QUESTION3: [CallbackQueryHandler(handle_question, pattern='^(Отправить данные|Нет, спасибо)$')],
