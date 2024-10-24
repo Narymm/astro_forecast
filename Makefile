@@ -3,4 +3,4 @@ install:
 		poetry install
 
 start:
-		poetry run python astro_forecast/forecast_sep.py
+		poetry run python astro_forecast/forecast.py
