@@ -3,10 +3,12 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, CallbackContext, MessageHandler, filters, ApplicationBuilder, Updater, JobQueue, ContextTypes
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from googleapiclient.discovery import build
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
 import hashlib
+import re
 
 
 # Включаем логирование
@@ -17,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 # Выключаем логирование
-logging.disable(logging.CRITICAL)
+#logging.disable(logging.CRITICAL)
 
 # Загрузка переменных окружения из файла .env
 load_dotenv()
@@ -26,14 +28,13 @@ load_dotenv()
 bot_token = os.getenv('BOT_TOKEN')
 
 # Определение состояний для ConversationHandler
-ASK_NAME, QUESTION1, QUESTION2, QUESTION3, GET_DATA, RESULT, GET_FIRST_ANSWER = range(7)
+ASK_NAME, HANDLE_QUESTION, GET_DATA, RESULT, GET_FIRST_ANSWER = range(5)
 
 # Путь к локальному изображению для приветственного сообщения
 #WELCOME_PHOTO_PATH = 'C:/Users/narym/Chatbots/test/test/IMG_0969.jpg'  # Замените на путь к вашему изображению
 WELCOME_PHOTO_PATH = os.getenv('WELCOME_PHOTO_PATH')
 
 # Описание результатов на основе ответов
-
 images_zodiac = {
     "Овен": {
         "image": os.getenv('OVEN')
@@ -100,9 +101,10 @@ data1 = get_google_sheet(table_name, sheet_name1)
 data2 = get_google_sheet(table_name, sheet_name2)
 
 # Преобразуем данные в вопросы, варианты и результаты
+start_massive = [row['Старт'] for row in data1]
+start_message=start_massive[0]
 questions = [row['Вопросы'] for row in data1]
 options = [row['Варианты'].split("|") for row in data1]
-#results = {row['Результат']: {'description': row['Описание'], 'image': row['Картинка']} for row in data}
 results = {row['Результат']: {'description': row['Описание']} for row in data2}
 
 # Добавление images в массив results
@@ -133,15 +135,18 @@ def get_updated_data_by_hash():
 
 async def get_updated_data():
     print("Файл изменен, обновляем данные...")
-    global questions, options, results
+    global start_message, questions, options, results
 
+    start_massive = [row['Старт'] for row in get_google_sheet(table_name, sheet_name1)]
+    start_message=start_massive[0]
     questions = [row['Вопросы'] for row in get_google_sheet(table_name, sheet_name1)]
     options = [row['Варианты'].split("|") for row in get_google_sheet(table_name, sheet_name1)]
     descr = {row['Результат']: {'description': row['Описание']} for row in get_google_sheet(table_name, sheet_name2)}
     for key in results:
         if key in descr:
             results[key]['description'] = descr[key]['description']
-    return questions, options, results
+
+    return start_message, questions, options, results
 
 # Функция для генерации inline клавиатуры
 def create_inline_keyboard(options, row_width=2):
@@ -152,7 +157,7 @@ def create_inline_keyboard(options, row_width=2):
 
 # Функция для генерации стартовой inline клавиатуры
 def start_keyboard():
-    keyboard = [[InlineKeyboardButton("Прогноз на сентябрь", callback_data="start_survey")]]
+    keyboard = [[InlineKeyboardButton("Прогноз", callback_data="start_survey")]]
     return InlineKeyboardMarkup(keyboard)
 
 # Запись данных в Google Sheets
@@ -170,17 +175,18 @@ async def start(update: Update, context: CallbackContext) -> int:
         await context.bot.send_photo(
             chat_id=update.message.chat_id,
             photo=photo,
-            caption='<b>ПРОГНОЗ на СЕНТЯБРЬ для вашего ЗНАКА ЗОДИАКА</b> 👇🏼\n\nНас ожидает месяц проявленности и возможности закрепить свои позиции. Сентябрь может быть плодотворным, особенно, если вы позаботились об этом еще в июле и в августе.\n\nУзнайте, что вам принесёт <b>СЕНТЯБРЬ</b> ▶️\n\n<b>+ Подарок</b> 💝\n\n✅ <b>Определю индивидуальные тенденции месяца</b> эксклюзивно для вас\n\nУзнать прогноз на СЕНТЯБРЬ 👇🏼',
-            parse_mode='HTML',
+            caption=start_message,
+            parse_mode='Markdown',
             reply_markup=start_keyboard()
         )
 
     modify = get_updated_data_by_hash()
-    print(f"Изменения: {modify}")
-
+          
     if modify == True:
         await get_updated_data()
-
+        
+    print(f"len(questions): {len(questions)}")
+    
     return ASK_NAME
 
 # Функция для обработки начала опроса
@@ -188,7 +194,7 @@ async def start_survey(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
     await query.message.reply_text('Пожалуйста, введите ваше имя:')
-
+    
     return ASK_NAME
 
 # Функция для обработки имени пользователя
@@ -201,31 +207,46 @@ async def ask_name(update: Update, context: CallbackContext) -> None:
         reply_markup=create_inline_keyboard(options[0], row_width=3),  # Задаем 3 кнопки в ряду
         parse_mode='Markdown'
     )
-    return QUESTION1
+    print(f"ASK_NAME пройден")
+    
+    # Переходим к первому вопросу
+    context.user_data['current_question'] = 1  # Устанавливаем начальное состояние
+    print(f"current_question: {context.user_data['current_question']}")
+    print(f"HANDLE_QUESTION: {HANDLE_QUESTION}")
+    print(f"len(questions): {len(questions)}")
+    return HANDLE_QUESTION
 
-
-
-# Функция для обработки ответов на вопросы
+# Функция для динамической обработки ответов на вопросы
 async def handle_question(update: Update, context: CallbackContext) -> None:
+    print(f"в handle_question зашел")
+    current_question = context.user_data.get('current_question', 1)
+    print(f"current_question: {current_question}")
+
     query = update.callback_query
     await query.answer()
     # Сохраняем ответ
     answers = context.user_data.setdefault('answers', [])
     answers.append(query.data)
-    # Определяем текущее состояние (номер вопроса)
-    current_state = len(answers) # Определяем текущее состояние (номер вопроса)
     
-    if current_state < len(questions):  # Учитываем, что последний вопрос - это вопрос о данных
+    # Определяем текущее состояние (номер вопроса)
+    if current_question < len(questions):  # Учитываем, что последний вопрос - это вопрос о данных
+        #for i in range (current_question, len(questions)-1):
         await query.message.reply_text(
-            questions[current_state],
-            reply_markup=create_inline_keyboard(options[current_state]),
+            questions[current_question],
+            reply_markup=create_inline_keyboard(options[current_question]),
             parse_mode='Markdown'
         )
-        print(f"current_state: {current_state}")
+        cq = 'question' + str(current_question)
+        response = query.data
+        
+        # Сохраняем ответ
+        context.user_data[cq] = response
+        
         print(f"len(questions): {len(questions)}")
-        return QUESTION1 + current_state
-            
-    elif current_state == len(questions) and query.data == "Отправить данные":
+        print(f"context.user_data: {context.user_data[cq]}")
+        
+    
+    elif current_question == len(questions) and query.data == "Отправить данные":
         if context.user_data['telegram_account'] is None:
              await query.message.reply_text(
                  '<b>Возможно, ваш личный контакт скрыт. Если вы хотели бы получить разбор, то укажите ваш <u>аккаунт через @ или номер телефона</u>, привязанный к этому аккаунту.</b>',
@@ -259,10 +280,16 @@ async def handle_question(update: Update, context: CallbackContext) -> None:
 
         write_to_google_sheets(context.user_data)
         context.user_data['answers'] = []
-        await query.message.reply_text('Присоединяйтесь к моему <a href="https://t.me/astro_nataly_bonum">ТГ-каналу</a> и <a href="https://www.instagram.com/nataly_bonum?igsh=MWo5emFvczUwaHUyNQ==">Инстаграмм</a>, где я делюсь астро-тенденциями и своей жизнью.\nА также, познакомьтесь с моим <a href="https://astronbonum.tilda.ws">сайтом</a>.\n\n❤️ Буду ждать вас там!\n\nДо встречи!',
+        await query.message.reply_text('Присоединяйтесь к моему <a href="https://t.me/astro_nataly_bonum">ТГ-каналу</a> и <a href="https://www.instagram.com/nataly_bonum?igsh=MWo5emFvczUwaHUyNQ==">Инстаграмм</a>, где я делюсь астро-тенденциями и своей жизнью.\nА также познакомьтесь с моим <a href="https://astronbonum.tilda.ws">сайтом</a>.\n\n❤️ Буду ждать вас там!\n\nДо встречи!',
                                        parse_mode='HTML'
                                        )
         return ConversationHandler.END
+    
+    # Переходим к следующему вопросу
+    context.user_data['current_question'] += 1
+    print(f"context.user_data: {context.user_data['current_question']}")
+    print(f"HANDLE_QUESTION: {HANDLE_QUESTION}")
+    return HANDLE_QUESTION
 
 async def get_first_answer(update: Update, context: CallbackContext) -> int:
     # Получаем ответ пользователя на первый вопрос
@@ -300,7 +327,7 @@ async def get_addit_data(update: Update, context: CallbackContext) -> None:
     
     write_to_google_sheets(context.user_data)
     context.user_data['answers'] = []
-    await update.message.reply_text('<i>В ближайшее время я свяжусь с вами ❤️\nИ предоставлю <b>ИНДИВИДУАЛЬНЫЕ</b> тенденции сентября по вашей натальной карте ☀️\nЧто поможет вам <b>расставить СВОИ ориентиры</b> в этот период</i>\n\nА пока, вы можете присоединиться к моему <a href="https://t.me/astro_nataly_bonum">ТГ-каналу</a> и <a href="https://www.instagram.com/nataly_bonum?igsh=MWo5emFvczUwaHUyNQ==">Инстаграмм</a>, где я делюсь астро-тенденциями и своей жизнью.\nА также, познакомиться с моим <a href="https://astronbonum.tilda.ws">сайтом</a>.\n\nДо связи!', 
+    await update.message.reply_text('<i>В ближайшее время я свяжусь с вами ❤️\nИ предоставлю <b>ИНДИВИДУАЛЬНЫЕ</b> тенденции месяца по вашей натальной карте ☀️\nЧто поможет вам <b>расставить СВОИ ориентиры</b> в этот период</i>\n\nА пока вы можете присоединиться к моему <a href="https://t.me/astro_nataly_bonum">ТГ-каналу</a> и <a href="https://www.instagram.com/nataly_bonum?igsh=MWo5emFvczUwaHUyNQ==">Инстаграмм</a>, где я делюсь астро-тенденциями и своей жизнью.\nА также познакомиться с моим <a href="https://astronbonum.tilda.ws">сайтом</a>.\n\nДо связи!', 
                                     parse_mode='HTML'
                                     )
     return ConversationHandler.END
@@ -323,6 +350,7 @@ async def send_ping(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id="504662108", text="Ping!")
 
 def main() -> None:
+    
     application = ApplicationBuilder().token(bot_token).build()
 
     # Получаем JobQueue
@@ -334,22 +362,19 @@ def main() -> None:
 
     job_queue.run_repeating(send_ping, interval=timedelta(minutes=60), first=timedelta(seconds=10), name="ping_job", data="chat_id")
 
+
     # Определение обработчика разговора с состояниями
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_survey, pattern='start_survey')],
         states={
             ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name)],
-            # Добавляем все вопросы из динамических состояний
-            1: [CallbackQueryHandler(handle_question, pattern='^(Овен|Телец|Близнецы|Рак|Лев|Дева|Весы|Скорпион|Стрелец|Козерог|Водолей|Рыбы)$')],
-            QUESTION1: [CallbackQueryHandler(handle_question, pattern='^(Овен|Телец|Близнецы|Рак|Лев|Дева|Весы|Скорпион|Стрелец|Козерог|Водолей|Рыбы)$')],
-            QUESTION2: [CallbackQueryHandler(handle_question, pattern='^(Удачно|Сложно)$')],
-            QUESTION3: [CallbackQueryHandler(handle_question, pattern='^(Отправить данные|Нет, спасибо)$')],
+            HANDLE_QUESTION: [CallbackQueryHandler(handle_question)],
             GET_DATA: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_addit_data)],
             GET_FIRST_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_first_answer)],
         },
         fallbacks=[CallbackQueryHandler(cancel, pattern="^cancel$")]
     )
-
+    
     application.add_handler(CommandHandler('start', start))
     application.add_handler(conv_handler)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cancel))  # Обработка текстовых сообщений
@@ -359,3 +384,4 @@ def main() -> None:
  
 if __name__ == '__main__':
     main()
+
