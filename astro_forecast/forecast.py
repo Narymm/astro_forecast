@@ -105,6 +105,8 @@ start_message=start_massive[0]
 questions = [row['Вопросы'] for row in data1]
 options = [row['Варианты'].split("|") for row in data1]
 results = {row['Результат']: {'description': row['Описание']} for row in data2}
+caption_massive = [row['Заголовок'] for row in data2]
+final_caption=caption_massive[0]
 
 # Добавление images в массив results
 for key in results:
@@ -141,11 +143,14 @@ async def get_updated_data():
     questions = [row['Вопросы'] for row in get_google_sheet(table_name, sheet_name1)]
     options = [row['Варианты'].split("|") for row in get_google_sheet(table_name, sheet_name1)]
     descr = {row['Результат']: {'description': row['Описание']} for row in get_google_sheet(table_name, sheet_name2)}
+    caption_massive = [row['Заголовок'] for row in get_google_sheet(table_name, sheet_name2)]
+    final_caption=caption_massive[0]
+
     for key in results:
         if key in descr:
             results[key]['description'] = descr[key]['description']
 
-    return start_message, questions, options, results
+    return start_message, questions, options, results, final_caption
 
 # Функция для генерации inline клавиатуры
 def create_inline_keyboard(options, row_width=2):
@@ -184,7 +189,7 @@ async def start(update: Update, context: CallbackContext) -> int:
     if modify == True:
         await get_updated_data()
         
-    print(f"len(questions): {len(questions)}")
+    #print(f"len(questions): {len(questions)}")
     
     return ASK_NAME
 
@@ -206,20 +211,20 @@ async def ask_name(update: Update, context: CallbackContext) -> None:
         reply_markup=create_inline_keyboard(options[0], row_width=3),  # Задаем 3 кнопки в ряду
         parse_mode='Markdown'
     )
-    print(f"ASK_NAME пройден")
+    #print(f"ASK_NAME пройден")
     
     # Переходим к первому вопросу
     context.user_data['current_question'] = 1  # Устанавливаем начальное состояние
-    print(f"current_question: {context.user_data['current_question']}")
-    print(f"HANDLE_QUESTION: {HANDLE_QUESTION}")
-    print(f"len(questions): {len(questions)}")
+    #print(f"current_question: {context.user_data['current_question']}")
+    #print(f"HANDLE_QUESTION: {HANDLE_QUESTION}")
+    #print(f"len(questions): {len(questions)}")
     return HANDLE_QUESTION
 
 # Функция для динамической обработки ответов на вопросы
 async def handle_question(update: Update, context: CallbackContext) -> None:
-    print(f"в handle_question зашел")
+    #print(f"в handle_question зашел")
     current_question = context.user_data.get('current_question', 1)
-    print(f"current_question: {current_question}")
+    #print(f"current_question: {current_question}")
 
     query = update.callback_query
     await query.answer()
@@ -241,8 +246,8 @@ async def handle_question(update: Update, context: CallbackContext) -> None:
         # Сохраняем ответ
         context.user_data[cq] = response
         
-        print(f"len(questions): {len(questions)}")
-        print(f"context.user_data: {context.user_data[cq]}")
+        #print(f"len(questions): {len(questions)}")
+        #print(f"context.user_data: {context.user_data[cq]}")
         
     
     elif current_question == len(questions) and query.data == "Отправить данные":
@@ -271,9 +276,14 @@ async def handle_question(update: Update, context: CallbackContext) -> None:
                 await context.bot.send_photo(
                     chat_id=query.message.chat_id,
                     photo=photo,
-                    caption=description,
-                    parse_mode='Markdown'
+                    #caption=description,
+                    caption=final_caption,
+                    #parse_mode='Markdown'
+                    parse_mode='HTML'
                 )
+            # Досылаем текст с результатом
+            await query.message.reply_text(description, parse_mode='Markdown')
+
         else:
             await query.message.reply_text(result_description, parse_mode='Markdown')
 
@@ -286,8 +296,8 @@ async def handle_question(update: Update, context: CallbackContext) -> None:
     
     # Переходим к следующему вопросу
     context.user_data['current_question'] += 1
-    print(f"context.user_data: {context.user_data['current_question']}")
-    print(f"HANDLE_QUESTION: {HANDLE_QUESTION}")
+    #print(f"context.user_data: {context.user_data['current_question']}")
+    #print(f"HANDLE_QUESTION: {HANDLE_QUESTION}")
     return HANDLE_QUESTION
 
 async def get_first_answer(update: Update, context: CallbackContext) -> int:
@@ -318,9 +328,13 @@ async def get_addit_data(update: Update, context: CallbackContext) -> None:
             await context.bot.send_photo(
                 chat_id=update.message.chat_id,
                 photo=photo,
-                caption=description,
+                #caption=description,
+                caption=final_caption,
                 parse_mode='Markdown'
             )
+        # Досылаем текст с результатом
+        await update.message.reply_text(description, parse_mode='Markdown')
+
     else:
         await update.message.reply_text(result_description, parse_mode='Markdown')
     
